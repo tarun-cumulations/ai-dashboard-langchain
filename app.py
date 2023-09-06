@@ -97,6 +97,10 @@ def decode_response(response: str) -> dict:
         return json.loads(response)
     except json.decoder.JSONDecodeError as e:
         return response
+    
+@app.route('/',methods=['GET'])
+def home():
+    return "AI dashboard server up and running.."
 
 
 @app.route('/generateKPIS', methods=['POST'])
