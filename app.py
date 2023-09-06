@@ -77,7 +77,7 @@ def get_conversational_agent(df):
 def ask_agent(agent, df, query):
     prompt = f"""
     I want to return a JSON data to a react application , it is expecting a JSON data.
-    JSON data includes 1.xAxisLabel 2.yAxisLabel 3.typeOfGraph 4.graphData.Except this JSON response , please dont provide me anything , I want to pass this to react application , so stictly only JSON data.
+    JSON data includes 1.xaxis 1.1)labelName 1.2)xAxisTickLabels 2.yaxis 2.1)labelName 2.2)yAxisTickLabels 3.typeOfGraph 4.graphData.Except this JSON response , please dont provide me anything , I want to pass this to react application , so stictly only JSON data.
     With the above instructions to be strictly followed and the following dataframe head: 
     {df.head()}
     Give me a JSON response for the following query:
