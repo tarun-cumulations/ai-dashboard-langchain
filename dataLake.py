@@ -1,11 +1,13 @@
 from flask import Flask, request, jsonify
 import requests
 from werkzeug.utils import secure_filename
+import traceback
 from langchain import OpenAI
 from langchain.agents import create_pandas_dataframe_agent,create_csv_agent
 import pandas as pd
 from dotenv import load_dotenv 
 import json
+import streamlit as st
 from streamlit.runtime.uploaded_file_manager import UploadedFile
 from tempfile import NamedTemporaryFile
 import os
@@ -16,12 +18,11 @@ from langchain.embeddings.openai import OpenAIEmbeddings
 from langchain.vectorstores import FAISS
 from langchain.chat_models import ChatOpenAI
 from langchain.chains import ConversationalRetrievalChain
-from flask_cors import CORS
-import random
-from functools import reduce
+import re
+from pandasai import SmartDatalake
+from pandasai.llm import OpenAI
 
 app = Flask(__name__)
-CORS(app, resources={r"/*": {"origins": "*"}})
 
 @app.route('/generateGraphData', methods=['POST'])
 def upload_files():
@@ -29,28 +30,15 @@ def upload_files():
     #merge_on = request.form['merge_on']
 
     file_paths = []
-    column_names_list = []
 
     for file in uploaded_files:
         filename = secure_filename(file.filename)
         filepath = os.path.join("/tmp", filename)
         file.save(filepath)
         file_paths.append(filepath)
-        df_for_merge_on_field = pd.read_csv(filepath, nrows=1)
-        column_names_list.append(set(df_for_merge_on_field.columns))
 
-    
-    common_columns = reduce(lambda x, y: x.intersection(y), column_names_list)
-
-    if not common_columns:
-        return jsonify({"error": "No common columns to merge on"}), 400
-
-    # Choose the first common column to merge on
-    merge_on = list(common_columns)[0]
-
-    df = csv_tool(file_paths, merge_on)
+    df = csv_tool(file_paths)
     agent = get_conversational_agent(df)
-
     
     query = request.form['query']
     response = ask_agent(agent, df, query=query)
@@ -58,13 +46,12 @@ def upload_files():
 
     return jsonify(decoded_response)
 
-def csv_tool(file_paths, merge_on="user_id"):
+def csv_tool(file_paths):
     df_list = [pd.read_csv(file) for file in file_paths]
-    df_final = df_list[0]
-    if len(df_list) > 1:
-        for df in df_list[1:]:
-            df_final = pd.merge(df_final, df, on=merge_on)
-    return df_final
+    llm = OpenAI(os.environ.get('OPENAI_API_KEY'))
+    dl = SmartDatalake(df_list, config={"llm": llm})
+    someDF = dl.chat("give me salaries of A and B")
+    return someDF
 
 def get_conversational_agent(df):
     embeddings = OpenAIEmbeddings()
@@ -91,7 +78,7 @@ def get_conversational_agent(df):
 def ask_agent(agent, df, query):
     prompt = f"""
     I want to return a JSON data to a react application , it is expecting a JSON data.
-    JSON data includes 1.xaxis 1.1)labelName 1.2)xAxisTickLabels 2.yaxis 2.1)labelName 2.2)yAxisTickLabels 3.typeOfGraph 4.graphData - graphData should be strictly array of objects holding label and datapoints.Except this JSON response , please dont provide me anything , I want to pass this to react application , so stictly only JSON data.
+    JSON data includes 1.xAxisLabel 2.yAxisLabel 3.typeOfGraph 4.graphData.Except this JSON response , please dont provide me anything , I want to pass this to react application , so stictly only JSON data.
     With the above instructions to be strictly followed and the following dataframe head: 
     {df.head()}
     Give me a JSON response for the following query:
@@ -111,36 +98,23 @@ def decode_response(response: str) -> dict:
         return json.loads(response)
     except json.decoder.JSONDecodeError as e:
         return response
-    
-@app.route('/',methods=['GET'])
-def home():
-    return "AI dashboard server up and running.."
 
 
 @app.route('/generateKPIS', methods=['POST'])
 def generate_kpis():
-    try:
-        uploaded_files = request.files.getlist("file[]")
-        df_list = [pd.read_csv(file.stream) for file in uploaded_files]
-        all_headers = [df.columns.tolist() for df in df_list]
-        flat_headers = list(set([header for sublist in all_headers for header in sublist]))
+    uploaded_files = request.files.getlist("file[]")
 
-        kpis_str = ask_chat_gpt_to_generate_kpis(flat_headers)
-        kpis_dict = json.loads(kpis_str)
+    df_list = [pd.read_csv(file.stream) for file in uploaded_files]
 
-        descriptions = [kpi['description'] for kpi in kpis_dict.get('KPIs', [])]
+    # Get the headers from all the dataframes
+    all_headers = [df.columns.tolist() for df in df_list]
 
-        enhanced_descriptions = []
-        for desc in descriptions:
-           enhanced_descriptions.append(f"{random.choice(['Give me a bar graph for', 'Give me a line graph for'])} {desc}")
+    # Flatten the list of headers and remove duplicates
+    flat_headers = list(set([header for sublist in all_headers for header in sublist]))
 
-        return jsonify({"KPIs": enhanced_descriptions})
-
-    except KeyError as e:
-        return jsonify({"error": f"KeyError: {e}"})
-
-    except Exception as e:
-        return jsonify({"error": f"An unexpected error occurred: {e}"})
+    # Then you could ask ChatGPT to generate KPIs based on these headers
+    kpis = ask_chat_gpt_to_generate_kpis(flat_headers)
+    return jsonify({"kpis": kpis})
 
 def ask_chat_gpt_to_generate_kpis(flat_headers):
     url = "https://api.openai.com/v1/chat/completions"
@@ -165,11 +139,9 @@ def ask_chat_gpt_to_generate_kpis(flat_headers):
     response = requests.post(url, headers=headers, json=data)
     
     if response.status_code == 200:
-        decoded_response = decode_response(response.json()['choices'][0]['message']['content'])
-        return json.dumps(decoded_response, default=str)
+        return response.json()['choices'][0]['message']['content']
     else:
         return None
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000, debug=True)
-
+    app.run(debug=True)
