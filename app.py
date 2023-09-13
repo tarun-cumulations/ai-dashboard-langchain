@@ -23,10 +23,11 @@ from functools import reduce
 app = Flask(__name__)
 CORS(app, resources={r"/*": {"origins": "*"}})
 
-@app.route('/generateGraphData', methods=['POST'])
+@app.route('/get-analytics', methods=['POST'])
 def upload_files():
     uploaded_files = request.files.getlist("file[]")
     #merge_on = request.form['merge_on']
+    mode = request.form['mode']
 
     file_paths = []
     column_names_list = []
@@ -43,7 +44,7 @@ def upload_files():
     common_columns = reduce(lambda x, y: x.intersection(y), column_names_list)
 
     if not common_columns:
-        return jsonify({"error": "No common columns to merge on"}), 400
+        return jsonify({"error": "No common columns to merge on.Either provide a single CSV file or provide CSV files which have common columns to merge"}), 400
 
     # Choose the first common column to merge on
     merge_on = list(common_columns)[0]
@@ -53,7 +54,7 @@ def upload_files():
 
     
     query = request.form['query']
-    response = ask_agent(agent, df, query=query)
+    response = ask_agent(agent, df, query=query,mode=mode)
     decoded_response = decode_response(response)
 
     return jsonify(decoded_response)
@@ -88,8 +89,8 @@ def get_conversational_agent(df):
     return chain
 
 
-def ask_agent(agent, df, query):
-    prompt = f"""
+def ask_agent(agent, df, query , mode):
+    promptForKPIs = f"""
     I want to return a JSON data to a react application , it is expecting a JSON data.
     JSON data includes 1.xaxis 1.1)labelName 1.2)xAxisTickLabels 2.yaxis 2.1)labelName 2.2)yAxisTickLabels 3.typeOfGraph 4.graphData - graphData should be strictly array of objects holding label and datapoints.Except this JSON response , please dont provide me anything , I want to pass this to react application , so stictly only JSON data.
     With the above instructions to be strictly followed and the following dataframe head: 
@@ -98,8 +99,24 @@ def ask_agent(agent, df, query):
     {query}
     """
 
+    promptForQuestions = f"""
+    I want to return a JSON data to a react application , it is expecting a JSON data.
+    JSON data includes 1.TextualResponse - Answers the query or question which is a String.Except this JSON response , please dont provide me anything , I want to pass this to react application , so stictly only JSON data.
+    With the above instructions to be strictly followed and the following dataframe head: 
+    {df.head()}
+    Give me a JSON response for the following query:
+    {query}
+    """
+
+    finalPrompt = ""
+
+    if(mode=="text"):
+        finalPrompt = promptForQuestions
+    else:
+        finalPrompt = promptForKPIs
+
     query = {
-        "question": prompt,
+        "question": finalPrompt,
         "chat_history": []
     }
 
@@ -117,7 +134,7 @@ def home():
     return "AI dashboard server up and running.."
 
 
-@app.route('/generateKPIS', methods=['POST'])
+@app.route('/generate-kpi-and-questions', methods=['POST'])
 def generate_kpis():
     try:
         uploaded_files = request.files.getlist("file[]")
@@ -126,21 +143,54 @@ def generate_kpis():
         flat_headers = list(set([header for sublist in all_headers for header in sublist]))
 
         kpis_str = ask_chat_gpt_to_generate_kpis(flat_headers)
+        questions = ask_chat_gpt_to_generate_questions(flat_headers)
         kpis_dict = json.loads(kpis_str)
-
+        ques_dict = json.loads(questions)
+        print(ques_dict)
         descriptions = [kpi['description'] for kpi in kpis_dict.get('KPIs', [])]
 
         enhanced_descriptions = []
         for desc in descriptions:
            enhanced_descriptions.append(f"{random.choice(['Give me a bar graph for', 'Give me a line graph for'])} {desc}")
 
-        return jsonify({"KPIs": enhanced_descriptions})
+        question_list = [q['question'] for q in ques_dict.get('Questions', [])]
+
+        return jsonify({"KPIs": enhanced_descriptions, "Questions": question_list})
 
     except KeyError as e:
         return jsonify({"error": f"KeyError: {e}"})
 
     except Exception as e:
         return jsonify({"error": f"An unexpected error occurred: {e}"})
+    
+
+def ask_chat_gpt_to_generate_questions(flat_headers):
+    url = "https://api.openai.com/v1/chat/completions"
+    openai_api_key = os.environ.get('OPENAI_API_KEY')
+    
+    headers = {
+        'Content-Type': 'application/json',
+        'Authorization': f"Bearer {openai_api_key}"
+    }
+    
+    data = {
+        "model": "gpt-3.5-turbo",
+        "temperature": 0,
+        "messages": [
+            {
+                "role": "user",
+                "content": f"Please respond with strictly JSON-formatted data.I am generating a thoughtful questions on this dataset.I will pass your response to a react application.Please strictly use JSON-formatted data.Name the JSON key as Questions which will be Array of objects containing only question.Generate thoughtful questions by which I can get some meaningful insights based on these headers: {flat_headers}"
+            }
+        ]
+    }
+    
+    response = requests.post(url, headers=headers, json=data)
+    
+    if response.status_code == 200:
+        decoded_response = decode_response(response.json()['choices'][0]['message']['content'])
+        return json.dumps(decoded_response, default=str)
+    else:
+        return None
 
 def ask_chat_gpt_to_generate_kpis(flat_headers):
     url = "https://api.openai.com/v1/chat/completions"
@@ -157,7 +207,7 @@ def ask_chat_gpt_to_generate_kpis(flat_headers):
         "messages": [
             {
                 "role": "user",
-                "content": f"Please respond with strictly JSON-formatted data.I am generating a thoughtful Key performance indicators which can give several insights.I will pass your response to a react application.Please strictly use JSON-formatted data.Name the JSON key as KPIs which will be Array of objects, each object containing only KPI-description.Generate KPIs based on these headers: {flat_headers}"
+                "content": f"Please respond with strictly JSON-formatted data.I am generating a thoughtful Key performance indicators which can give several insights.I will pass your response to a react application.Please strictly use JSON-formatted data.Name the JSON key as KPIs which will be Array of objects, each object containing only description.Generate KPIs based on these headers: {flat_headers}"
             }
         ]
     }
