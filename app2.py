@@ -92,24 +92,52 @@ def get_conversational_agent(df):
 
 
 def ask_agent(agent, df, query , mode):
-    promptForKPIs = f"""
-    I want to return a JSON data to a react application , it is expecting a JSON data.
-    JSON data includes 1.xaxis 1.1)labelName 1.2)xAxisTickLabels 2.yaxis 2.1)labelName 2.2)yAxisTickLabels 3.typeOfGraph 4.graphData - graphData should be strictly array of objects holding label and datapoints.Except this JSON response , please dont provide me anything , I want to pass this to react application , so stictly only JSON data.
-    With the above instructions to be strictly followed and the following dataframe: 
-    {df}
-    Give me a JSON response for the following query:
+    promptForKPIs = """
+    For this chat context, you are a python coder who is writing code which will be directly executed using python 'exec' function. 
+
+    - Write code assuming you have a dataframe with a variable 'df'.
+    - Generate a JSON response based on the query.
+    
+    The JSON response should have the following structure:
+    1. 'xaxis'
+        1.1 'labelName'
+        1.2 'xAxisTickLabels'
+    2. 'yaxis'
+        2.1 'labelName'
+        2.2 'yAxisTickLabels'
+    3. 'typeOfGraph'
+    4. 'graphData': An array of objects, each holding 'label' and 'datapoints'.
+
+    I will pass you the dataframe head , use this as reference on how the df may look.
+
+    This is the dataframe head : {df.head.to_string()}
+
+    Note: Apart from the JSON output, the code should not return anything else.
+
+    Here's your query to execute:
     {query}
+
+    Return the python code that you wrote in 'code' as JSON response , which i will execute with exec function.
     """
+
 
     print(promptForKPIs)
 
-    promptForQuestions = f"""
-    I want to return a JSON data to a react application , it is expecting a JSON data.
-    JSON data includes 1.TextualResponse - Answers the query or question which is a String , Apart from this dont send any extra JSON attribute..Except this JSON response , please dont provide me anything , I want to pass this to react application , so stictly only JSON data.
-    With the above instructions to be strictly followed and the following dataframe : 
-    {df}
-    Give me a JSON response for the following query:
+    promptForQuestions = """
+    For this chat context, you are a Python coder. Your code will be executed directly using Python's 'exec' function. Here's what you need to do:
+
+    - Assume you have a dataframe with a variable 'df'.
+    - Write code to generate a JSON response based on the query.
+
+    The JSON response should have the following structure:
+    1. 'TextualResponse': A string that answers the query or question.
+
+    Note: Apart from this JSON response, the code should not return anything else.
+
+    Here's your query to execute:
     {query}
+
+    Return the Python code that you wrote in 'code' as a JSON response, which I will execute using the exec function.Apart from code , DO NOT return me anything.
     """
 
     print(promptForQuestions)
@@ -127,6 +155,7 @@ def ask_agent(agent, df, query , mode):
     }
 
     response = agent.run(query)
+    print("response :"+response)
     return str(response)
 
 def decode_response(response: str) -> dict:
