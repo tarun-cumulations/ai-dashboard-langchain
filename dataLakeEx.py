@@ -10,8 +10,13 @@ employees_df = pd.DataFrame(employees_data)
 
 salaries_df = pd.DataFrame(salaries_data)
 
+print(employees_df)
+
+print(salaries_df)
+
 llm = OpenAI('sk-YmucvyKpQJMnyjuXagmvTSdkDALwlQJ9sWBsFrKiJ1FuAMo3J')
 
 dl = SmartDatalake([employees_df, salaries_df], config={"llm": llm})
 
-print(dl.chat("Give me only the JSON DATA to the query : give me the salary comparison between Sales and IT"))
+print(dl.chat("Give me a bar graph for salaries and department"))
+
