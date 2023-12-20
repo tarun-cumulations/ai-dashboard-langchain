@@ -84,7 +84,16 @@ def get_analytic_sql():
         extracted_sql = generated_sql[start_index:end_index].strip()
         print(extracted_sql)
         # Step 5: Execute SQL query (after validating it)
-        cursor.execute(extracted_sql)
+
+        dangerous_commands = ["DELETE", "DROP", "TRUNCATE", "UPDATE"]
+
+        if any(command in extracted_sql.upper() for command in dangerous_commands):
+            return jsonify({"error": "Dangerous SQL command detected! Please revise your query."}), 400
+        
+        try:
+            cursor.execute(extracted_sql)
+        except:
+            return jsonify({"error": "Error! Please try some again"}), 400
 
         result1 = cursor.fetchall()
         
@@ -98,6 +107,9 @@ def get_analytic_sql():
     agent = get_conversational_agent(answer)
     response = ask_agent(agent,mode=mode,answer=answer)
     decoded_response = decode_response(response)
+
+    if not isinstance(decoded_response, dict):
+        return jsonify({"error": "Error!Please try again"}), 400
 
     return jsonify(decoded_response)
 
@@ -164,6 +176,9 @@ def get_analytics_csv():
     response = ask_agent_csv(agent,mode=mode,headers=headers,userquery=query,answer=answer)
     decoded_response = decode_response(response)
 
+    if not isinstance(decoded_response, dict):
+        return jsonify({"error": "Error!Please try again"}), 400
+
     return jsonify(decoded_response)
 
 
@@ -216,7 +231,7 @@ def ask_agent(agent, mode, answer=""):
     if mode == "text":
         finalPrompt = f"""
         I want to return a JSON data to a react application, it is expecting a JSON data.
-        JSON data includes 1.TextualResponse - Answers the query or question which is a String. 
+        JSON data includes 1.TextualResponse - Answers the query or question which is a String. Make this easy to understand , keep the answer as coversational.Instead of saying this is a answer to query , fetch the neccessary data from the query and explain.
         Apart from this, don't send any extra JSON attribute. Except this JSON response, please don't provide me anything;
         I want to pass this to a react application, so strictly only JSON data.
         The answer to the query is: 
@@ -225,7 +240,7 @@ def ask_agent(agent, mode, answer=""):
     else:
         finalPrompt = f"""
         I want to return a JSON data to a react application, it is expecting a JSON data.
-        JSON data includes 1.xaxis 1.1)labelName 1.2)xAxisTickLabels 2.yaxis 2.1)labelName 2.2)yAxisTickLabels 3.typeOfGraph 4.graphData.
+        JSON data includes 1.xaxis 1.1)labelName 1.2)xAxisTickLabels 2.yaxis 2.1)labelName 2.2)yAxisTickLabels 3.typeOfGraph 4.graphData,graphData is a array of objects , each object containing label and datapoints which is a array.
         Apart from this, don't send any extra JSON attribute. Except this JSON response, please don't provide me anything;
         I want to pass this to a react application, so strictly only JSON data.
         The answer to the query is: 
@@ -270,7 +285,7 @@ def generate_kpis():
 
         enhanced_descriptions = []
         for desc in descriptions:
-           enhanced_descriptions.append(f"{random.choice(['Give me a bar graph for', 'Give me a line graph for'])} {desc}")
+           enhanced_descriptions.append(f"{random.choice(['', ''])}{desc}")
 
         question_list = [q['question'] for q in ques_dict.get('Questions', [])]
 
@@ -325,7 +340,7 @@ def generate_kpis_sql():
 
             enhanced_descriptions = []
             for desc in descriptions:
-                enhanced_descriptions.append(f"{random.choice(['Give me a bar graph for', 'Give me a line graph for'])} {desc}")
+                enhanced_descriptions.append(f"{random.choice(['', ''])}{desc}")
 
             question_list = [q['question'] for q in ques_dict.get('Questions', [])]
 
@@ -582,4 +597,4 @@ def analyze():
         return jsonify({"error": str(e)})
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000, debug=True)
+    app.run(host='0.0.0.0', port=3000, debug=True)
